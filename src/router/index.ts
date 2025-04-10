@@ -17,7 +17,18 @@ const router = createRouter({
       // which is lazy-loaded when the route is visited.
       component: () => import('../views/AboutView.vue'),
     },
+    {
+      path: '/upload',
+      name: 'upload',
+      component: () => import('../views/UploadView.vue'),
+    },
+    {
+      path: '/download',
+      name: 'download',
+      component: () => import('../views/DownloadView.vue'),
+    },
   ],
 })
 
 export default router
+
