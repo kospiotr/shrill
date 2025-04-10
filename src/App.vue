@@ -25,6 +25,7 @@ const getName = async () => {
       <nav>
         <RouterLink to="/">Home</RouterLink>
         <RouterLink to="/about">About</RouterLink>
+        <p>Changed</p>
       </nav>
     </div>
   </header>
