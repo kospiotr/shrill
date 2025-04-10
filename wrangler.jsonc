@@ -12,14 +12,7 @@
 	},
 	"observability": {
 		"enabled": true
-	},
-	"kv_namespaces": [
-		{
-			"binding": "SHRILL_KV",
-			"id": "SHRILL_KV",
-			"preview_id": "ab09c0b0a7094a3683d6cc43c55b3425"
-		}
-	]
+	}
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
