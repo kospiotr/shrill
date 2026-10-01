@@ -1,30 +1,26 @@
 <script setup lang="ts">
-import {RouterView} from 'vue-router'
+import { RouterView } from 'vue-router'
 import MainMenuComponent from './components/MainMenuComponent.vue'
 </script>
 
 <template>
-  <header>
-    <MainMenuComponent/>
-  </header>
-  <main>
-    <RouterView/>
-  </main>
+  <div class="shell">
+    <MainMenuComponent />
+    <main>
+      <RouterView />
+    </main>
+  </div>
 </template>
 
 <style scoped>
-.app-container {
-  display: flex;
-  flex-direction: column;
-}
-
-header {
-  flex-shrink: 0;
+.shell {
+  width: 100%;
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 0 1.25rem 3rem;
 }
 
 main {
-  flex-grow: 1;
-  overflow-y: auto;
-  padding: 15px;
+  padding-top: 2rem;
 }
 </style>

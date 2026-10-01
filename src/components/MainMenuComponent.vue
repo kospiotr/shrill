@@ -3,36 +3,52 @@ import { RouterLink } from 'vue-router'
 </script>
 
 <template>
-  <div class="menu">
-    <RouterLink to="/upload" class="button">Upload</RouterLink>
-    <RouterLink to="/download" class="button">Download</RouterLink>
-  </div>
+  <nav class="menu">
+    <RouterLink to="/" class="brand">shrill</RouterLink>
+    <div class="links">
+      <RouterLink to="/">Upload</RouterLink>
+      <RouterLink to="/d">Download</RouterLink>
+      <RouterLink to="/files">Files</RouterLink>
+    </div>
+  </nav>
 </template>
 
 <style scoped>
 .menu {
   display: flex;
-  flex-direction: row;
-  justify-content: center;
-  align-items: center;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 1rem;
-  min-width: 100%;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--color-border);
 }
 
-.button {
-  background-color: hsla(160, 100%, 37%, 1);
-  color: var(--color-background);
-  border: 0;
-  padding: 0.75rem 1.5rem;
-  border-radius: 0.25rem;
-  cursor: pointer;
-  margin: 1rem 0;
-  text-decoration: none;
+.brand {
   font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-heading);
+  text-decoration: none;
 }
 
-.button:hover {
-  background-color: hsla(160, 100%, 45%, 1);
+.links {
+  display: flex;
+  gap: 1.25rem;
+}
+
+.links a {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  padding-bottom: 0.25rem;
+  border-bottom: 2px solid transparent;
+}
+
+.links a:hover {
+  color: var(--color-text);
+}
+
+.links a.router-link-active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
 }
 </style>
-

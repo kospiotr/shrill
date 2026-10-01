@@ -1,86 +1,140 @@
-<template>
-  <div class="download-container">
-    <h1>Download Page</h1>
-    <form @submit.prevent="handleDownload" class="download-form">
-      <input type="text" v-model="fileId" placeholder="Enter file ID" />
-      <button type="submit">Get</button>
-    </form>
-    <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
-    <p v-if="successMessage" class="success">{{ successMessage }}</p>
-  </div>
-</template>
-
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import type { FileMeta } from '@shared/protocol'
+import { downloadUrl, fetchMeta, formatBytes } from '@/lib/transfer'
 
-const fileId = ref<string>('')
-const errorMessage = ref<string | null>(null)
-const successMessage = ref<string | null>(null)
+const route = useRoute()
+const router = useRouter()
 
-async function handleDownload() {
-  errorMessage.value = null
-  successMessage.value = null
+const query = ref('')
+const meta = ref<FileMeta | null>(null)
+const error = ref<string | null>(null)
+const loading = ref(false)
 
-  if (!fileId.value) {
-    errorMessage.value = 'Please enter a file ID.'
-    return
-  }
+/** Accept a bare id or a full share link, so a pasted URL just works. */
+function parseId(input: string): string {
+  const trimmed = input.trim()
+  const fromUrl = trimmed.match(/\/(?:d|api\/(?:files|download))\/([^/?#]+)/)
+  return fromUrl ? fromUrl[1] : trimmed
+}
+
+async function load(id: string) {
+  loading.value = true
+  error.value = null
+  meta.value = null
 
   try {
-    const response = await fetch(`/api/shrilldown?id=${fileId.value}`)
-    if (response.status === 404) {
-      errorMessage.value = 'File not found.'
-    } else if (response.ok) {
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${fileId.value}.txt`
-      a.click()
-      window.URL.revokeObjectURL(url)
-      successMessage.value = 'File found and downloaded successfully.'
-    } else {
-      errorMessage.value = 'An error occurred while downloading the file.'
+    const found = await fetchMeta(id)
+    if (!found.complete) {
+      error.value = 'That upload never finished, so there is nothing to download.'
+      return
     }
-  } catch (error) {
-    console.error('Error during download:', error)
-    errorMessage.value = 'An unexpected error occurred.'
+    meta.value = found
+  } catch (cause) {
+    error.value = (cause as Error).message
+  } finally {
+    loading.value = false
   }
 }
+
+function lookup() {
+  const id = parseId(query.value)
+  if (!id) {
+    error.value = 'Enter a file id or a share link.'
+    return
+  }
+  // Navigating is enough; the route watcher performs the lookup.
+  if (id === route.params.id) {
+    void load(id)
+  } else {
+    void router.push({ name: 'download', params: { id } })
+  }
+}
+
+watch(
+  () => route.params.id,
+  (id) => {
+    const value = typeof id === 'string' ? id : ''
+    query.value = value
+    if (value) void load(value)
+  },
+  { immediate: true },
+)
 </script>
 
+<template>
+  <section class="download">
+    <h1>Receive a file</h1>
+
+    <form class="lookup" @submit.prevent="lookup">
+      <input v-model="query" placeholder="File id or share link" spellcheck="false" />
+      <button type="submit" class="primary" :disabled="loading">
+        {{ loading ? 'Looking…' : 'Find' }}
+      </button>
+    </form>
+
+    <p v-if="error" class="error">{{ error }}</p>
+
+    <div v-if="meta" class="found">
+      <dl>
+        <dt>File</dt>
+        <dd>{{ meta.name }}</dd>
+        <dt>Size</dt>
+        <dd>{{ formatBytes(meta.size) }}</dd>
+        <dt>Type</dt>
+        <dd>{{ meta.type || 'unknown' }}</dd>
+        <dt>Uploaded</dt>
+        <dd>{{ new Date(meta.createdAt).toLocaleString() }}</dd>
+      </dl>
+      <a class="primary button" :href="downloadUrl(meta.id)" :download="meta.name">
+        Download {{ meta.name }}
+      </a>
+    </div>
+  </section>
+</template>
+
 <style scoped>
-.download-container {
+.download {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-  padding: 2rem;
-}
-
-.download-form {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   gap: 1rem;
 }
 
-input {
-  padding: 0.5rem;
-  font-size: 1rem;
+.lookup {
+  display: flex;
+  gap: 0.5rem;
 }
 
-button {
-  padding: 0.5rem 1rem;
-  font-size: 1rem;
-  cursor: pointer;
+.lookup input {
+  flex: 1;
+  min-width: 0;
 }
 
-.error {
-  color: red;
+.found {
+  padding: 1.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-background-soft);
 }
 
-.success {
-  color: green;
+dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 1rem;
+  margin-bottom: 1rem;
+}
+
+dt {
+  color: var(--color-text-muted);
+}
+
+dd {
+  word-break: break-all;
+}
+
+.button {
+  display: inline-block;
+  text-decoration: none;
 }
 </style>

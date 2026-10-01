@@ -2,7 +2,9 @@
   "extends": "./tsconfig.node.json",
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.worker.tsbuildinfo",
-    "types": ["@cloudflare/workers-types/2023-07-01", "./worker-configuration.d.ts","vite/client"],
+    // Runtime types come from the generated worker-configuration.d.ts below,
+    // which `npm run cf-typegen` regenerates from wrangler.jsonc.
+    "types": ["vite/client"]
   },
-  "include": ["server"],
+  "include": ["server", "shared", "worker-configuration.d.ts"]
 }
