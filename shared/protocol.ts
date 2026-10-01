@@ -1,8 +1,8 @@
 /**
  * Wire protocol shared by the Worker and the browser client.
  *
- * Uploads travel over GET requests with the payload in the query string, so the
- * chunk size is bounded by Cloudflare's 16 KB URL limit:
+ * Everything travels over GET requests with the payload in the query string,
+ * so the chunk size is bounded by Cloudflare's 16 KB URL limit:
  * https://developers.cloudflare.com/workers/platform/limits/
  */
 
@@ -18,7 +18,7 @@ export const MAX_FILE_SIZE = 512 * 1024 * 1024
 /** Longest original filename kept in metadata. */
 export const MAX_NAME_LENGTH = 255
 
-/** Everything known about one stored file. Persisted as `uploads/<id>/meta.json`. */
+/** Everything known about one stored item. Persisted as `garden/<id>/meta.json`. */
 export interface FileMeta {
   id: string
   name: string

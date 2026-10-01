@@ -1,18 +1,18 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import type { FileMeta } from '@shared/protocol'
-import { discardUpload, downloadUrl, fetchFiles, formatBytes, shareUrl } from '@/lib/transfer'
+import { fetchGarden, formatBytes, harvestLink, harvestUrl, uproot } from '@/lib/garden'
 
-const files = ref<FileMeta[]>([])
+const plantings = ref<FileMeta[]>([])
 const cursor = ref<string | undefined>(undefined)
 const loading = ref(false)
 const loadingMore = ref(false)
 const error = ref<string | null>(null)
 const copiedId = ref<string | null>(null)
 
-/** Id of the row awaiting a second click before it actually deletes. */
+/** Id of the row awaiting a second click before it actually uproots. */
 const confirmingId = ref<string | null>(null)
-const deletingId = ref<string | null>(null)
+const uprootingId = ref<string | null>(null)
 let confirmTimer: ReturnType<typeof setTimeout> | undefined
 
 async function load() {
@@ -20,8 +20,8 @@ async function load() {
   error.value = null
 
   try {
-    const page = await fetchFiles()
-    files.value = page.files
+    const page = await fetchGarden()
+    plantings.value = page.files
     cursor.value = page.cursor
   } catch (cause) {
     error.value = (cause as Error).message
@@ -35,8 +35,8 @@ async function loadMore() {
   loadingMore.value = true
 
   try {
-    const page = await fetchFiles(cursor.value)
-    files.value = [...files.value, ...page.files]
+    const page = await fetchGarden(cursor.value)
+    plantings.value = [...plantings.value, ...page.files]
     cursor.value = page.cursor
   } catch (cause) {
     error.value = (cause as Error).message
@@ -47,7 +47,7 @@ async function loadMore() {
 
 async function copyLink(id: string) {
   try {
-    await navigator.clipboard.writeText(shareUrl(id))
+    await navigator.clipboard.writeText(harvestLink(id))
     copiedId.value = id
     setTimeout(() => {
       if (copiedId.value === id) copiedId.value = null
@@ -57,10 +57,10 @@ async function copyLink(id: string) {
   }
 }
 
-/** First click arms the row; a second click within the window deletes it. */
-function requestDelete(id: string) {
+/** First click arms the row; a second click within the window uproots it. */
+function requestUproot(id: string) {
   if (confirmingId.value === id) {
-    void performDelete(id)
+    void performUproot(id)
     return
   }
 
@@ -71,19 +71,19 @@ function requestDelete(id: string) {
   }, 4000)
 }
 
-async function performDelete(id: string) {
+async function performUproot(id: string) {
   clearTimeout(confirmTimer)
   confirmingId.value = null
-  deletingId.value = id
+  uprootingId.value = id
   error.value = null
 
   try {
-    await discardUpload(id)
-    files.value = files.value.filter((file) => file.id !== id)
+    await uproot(id)
+    plantings.value = plantings.value.filter((planting) => planting.id !== id)
   } catch (cause) {
     error.value = (cause as Error).message
   } finally {
-    deletingId.value = null
+    uprootingId.value = null
   }
 }
 
@@ -92,43 +92,44 @@ onUnmounted(() => clearTimeout(confirmTimer))
 </script>
 
 <template>
-  <section class="files">
-    <h1>Available files</h1>
-    <p class="lede">Every completed upload, newest first.</p>
+  <section class="garden">
+    <h1>The garden</h1>
+    <p class="lede">Everything that's grown, newest first.</p>
 
     <p v-if="error" class="error">{{ error }}</p>
 
-    <p v-if="loading" class="muted">Loading…</p>
+    <p v-if="loading" class="muted">Looking around…</p>
 
-    <p v-else-if="files.length === 0" class="muted">No files have been uploaded yet.</p>
+    <p v-else-if="plantings.length === 0" class="muted">Nothing has been planted yet.</p>
 
     <ul v-else class="list">
-      <li v-for="file in files" :key="file.id" class="row">
+      <li v-for="planting in plantings" :key="planting.id" class="row">
         <div class="info">
-          <span class="name">{{ file.name }}</span>
+          <span class="name">{{ planting.name }}</span>
           <span class="muted">
-            {{ formatBytes(file.size) }} · {{ new Date(file.createdAt).toLocaleString() }}
+            {{ formatBytes(planting.size) }} ·
+            {{ new Date(planting.createdAt).toLocaleString() }}
           </span>
         </div>
         <div class="row-actions">
-          <button type="button" @click="copyLink(file.id)">
-            {{ copiedId === file.id ? 'Copied' : 'Copy link' }}
+          <button type="button" @click="copyLink(planting.id)">
+            {{ copiedId === planting.id ? 'Copied' : 'Copy tag' }}
           </button>
-          <a class="button primary" :href="downloadUrl(file.id)" :download="file.name">
-            Download
+          <a class="button primary" :href="harvestUrl(planting.id)" :download="planting.name">
+            Harvest
           </a>
           <button
             type="button"
             class="danger"
-            :disabled="deletingId === file.id"
-            @click="requestDelete(file.id)"
+            :disabled="uprootingId === planting.id"
+            @click="requestUproot(planting.id)"
           >
             {{
-              deletingId === file.id
-                ? 'Deleting…'
-                : confirmingId === file.id
-                  ? 'Confirm delete'
-                  : 'Delete'
+              uprootingId === planting.id
+                ? 'Uprooting…'
+                : confirmingId === planting.id
+                  ? 'Confirm uproot'
+                  : 'Uproot'
             }}
           </button>
         </div>
@@ -136,13 +137,13 @@ onUnmounted(() => clearTimeout(confirmTimer))
     </ul>
 
     <button v-if="cursor" type="button" :disabled="loadingMore" @click="loadMore">
-      {{ loadingMore ? 'Loading…' : 'Load more' }}
+      {{ loadingMore ? 'Looking…' : 'See more' }}
     </button>
   </section>
 </template>
 
 <style scoped>
-.files {
+.garden {
   display: flex;
   flex-direction: column;
   gap: 1rem;

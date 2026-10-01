@@ -4,11 +4,11 @@ import { RouterLink } from 'vue-router'
 
 <template>
   <nav class="menu">
-    <RouterLink to="/" class="brand">shrill</RouterLink>
+    <RouterLink to="/" class="brand">greenhouse</RouterLink>
     <div class="links">
-      <RouterLink to="/">CLI</RouterLink>
-      <RouterLink to="/upload">Upload</RouterLink>
-      <RouterLink to="/files">Files</RouterLink>
+      <RouterLink to="/">Almanac</RouterLink>
+      <RouterLink to="/plant">Plant</RouterLink>
+      <RouterLink to="/garden">Garden</RouterLink>
     </div>
   </nav>
 </template>

@@ -3,39 +3,39 @@ import { computed, ref } from 'vue'
 import type { FileMeta } from '@shared/protocol'
 import { MAX_FILE_SIZE } from '@shared/protocol'
 import {
-  discardUpload,
-  downloadUrl,
   formatBytes,
-  shareUrl,
-  uploadFile,
-  type UploadProgress,
-} from '@/lib/transfer'
+  harvestLink,
+  harvestUrl,
+  plantFile,
+  uproot,
+  type PlantProgress,
+} from '@/lib/garden'
 
-const file = ref<File | null>(null)
-const progress = ref<UploadProgress | null>(null)
+const chosen = ref<File | null>(null)
+const progress = ref<PlantProgress | null>(null)
 const result = ref<FileMeta | null>(null)
 const error = ref<string | null>(null)
 const dragging = ref(false)
 const copied = ref(false)
 
 let controller: AbortController | null = null
-/** Id of an upload in flight, so cancelling can clean up its chunks. */
+/** Id of a planting in progress, so cancelling can clean up after it. */
 let pendingId: string | null = null
 
 const busy = computed(() => progress.value !== null)
 const percent = computed(() => Math.round((progress.value?.fraction ?? 0) * 100))
-const link = computed(() => (result.value ? shareUrl(result.value.id) : ''))
+const link = computed(() => (result.value ? harvestLink(result.value.id) : ''))
 
 function select(next: File | null) {
   if (busy.value) return
-  file.value = next
+  chosen.value = next
   result.value = null
   error.value = null
   copied.value = false
 
   if (next && next.size > MAX_FILE_SIZE) {
     error.value = `${next.name} is ${formatBytes(next.size)}; the limit is ${formatBytes(MAX_FILE_SIZE)}.`
-    file.value = null
+    chosen.value = null
   }
 }
 
@@ -49,8 +49,8 @@ function onDrop(event: DragEvent) {
   select(event.dataTransfer?.files?.[0] ?? null)
 }
 
-async function send() {
-  if (!file.value || busy.value) return
+async function plant() {
+  if (!chosen.value || busy.value) return
 
   controller = new AbortController()
   error.value = null
@@ -58,7 +58,7 @@ async function send() {
   progress.value = null
 
   try {
-    result.value = await uploadFile(file.value, {
+    result.value = await plantFile(chosen.value, {
       signal: controller.signal,
       onMeta: (meta) => {
         pendingId = meta.id
@@ -70,13 +70,13 @@ async function send() {
     pendingId = null
   } catch (cause) {
     const aborted = cause instanceof DOMException && cause.name === 'AbortError'
-    error.value = aborted ? 'Upload cancelled.' : (cause as Error).message
+    error.value = aborted ? 'Planting cancelled.' : (cause as Error).message
 
-    // Drop the chunks that did make it, so a cancelled upload leaves nothing behind.
+    // Pull up the seeds that did take root, so a cancelled planting leaves nothing behind.
     if (pendingId) {
       const id = pendingId
       pendingId = null
-      void discardUpload(id).catch(() => {})
+      void uproot(id).catch(() => {})
     }
   } finally {
     progress.value = null
@@ -89,7 +89,7 @@ function cancel() {
 }
 
 function reset() {
-  file.value = null
+  chosen.value = null
   result.value = null
   error.value = null
   copied.value = false
@@ -107,11 +107,11 @@ async function copyLink() {
 </script>
 
 <template>
-  <section class="upload">
-    <h1>Send a file</h1>
+  <section class="plant">
+    <h1>Plant something</h1>
     <p class="lede">
-      The file is sliced in the browser and each slice is sent as its own GET request, then
-      reassembled on download.
+      Whatever you plant is sliced into seeds in the browser, and each one is sown as its own GET
+      request — the whole row grows back together the moment it's harvested.
     </p>
 
     <label
@@ -122,24 +122,24 @@ async function copyLink() {
       @drop.prevent="onDrop"
     >
       <input type="file" :disabled="busy" @change="onFileChange" />
-      <strong v-if="file">{{ file.name }}</strong>
-      <strong v-else>Drop a file here, or click to choose</strong>
-      <span v-if="file" class="muted">{{ formatBytes(file.size) }}</span>
+      <strong v-if="chosen">{{ chosen.name }}</strong>
+      <strong v-else>Drop something here, or click to choose</strong>
+      <span v-if="chosen" class="muted">{{ formatBytes(chosen.size) }}</span>
       <span v-else class="muted">Up to {{ formatBytes(MAX_FILE_SIZE) }}</span>
     </label>
 
     <div class="actions">
-      <button type="button" class="primary" :disabled="!file || busy" @click="send">
-        {{ busy ? 'Uploading…' : 'Upload' }}
+      <button type="button" class="primary" :disabled="!chosen || busy" @click="plant">
+        {{ busy ? 'Planting…' : 'Plant' }}
       </button>
       <button v-if="busy" type="button" @click="cancel">Cancel</button>
-      <button v-else-if="file || result" type="button" @click="reset">Clear</button>
+      <button v-else-if="chosen || result" type="button" @click="reset">Clear</button>
     </div>
 
     <div v-if="progress" class="progress" role="status">
       <div class="track"><div class="bar" :style="{ width: `${percent}%` }" /></div>
       <span class="muted">
-        {{ percent }}% · chunk {{ progress.uploaded }} of {{ progress.total }} ·
+        {{ percent }}% · seed {{ progress.sown }} of {{ progress.total }} ·
         {{ formatBytes(progress.bytes) }} of {{ formatBytes(progress.size) }}
       </span>
     </div>
@@ -147,26 +147,26 @@ async function copyLink() {
     <p v-if="error" class="error">{{ error }}</p>
 
     <div v-if="result" class="result">
-      <h2>Upload complete</h2>
+      <h2>Planted</h2>
       <dl>
-        <dt>File</dt>
+        <dt>Name</dt>
         <dd>{{ result.name }} ({{ formatBytes(result.size) }})</dd>
-        <dt>Chunks</dt>
+        <dt>Rows</dt>
         <dd>{{ result.chunks }} × {{ formatBytes(result.chunkSize) }}</dd>
-        <dt>Id</dt>
+        <dt>Plot</dt>
         <dd><code>{{ result.id }}</code></dd>
       </dl>
       <div class="share">
         <input :value="link" readonly @focus="($event.target as HTMLInputElement).select()" />
         <button type="button" @click="copyLink">{{ copied ? 'Copied' : 'Copy' }}</button>
       </div>
-      <a class="download" :href="downloadUrl(result.id)">Download it now</a>
+      <a class="harvest" :href="harvestUrl(result.id)">Harvest it now</a>
     </div>
   </section>
 </template>
 
 <style scoped>
-.upload {
+.plant {
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -277,7 +277,7 @@ dd {
   min-width: 0;
 }
 
-.download {
+.harvest {
   color: var(--color-accent);
 }
 </style>

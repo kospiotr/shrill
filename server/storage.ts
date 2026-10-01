@@ -1,4 +1,4 @@
-/** R2 layout and access helpers for stored uploads. */
+/** R2 layout and access helpers for stored plantings. */
 
 import type { FileMeta } from '../shared/protocol'
 
@@ -9,13 +9,13 @@ export function isValidId(id: string): boolean {
   return ID_PATTERN.test(id)
 }
 
-const UPLOADS_PREFIX = 'uploads/'
+const GARDEN_PREFIX = 'garden/'
 
-const metaKey = (id: string) => `${UPLOADS_PREFIX}${id}/meta.json`
-const partPrefix = (id: string) => `${UPLOADS_PREFIX}${id}/parts/`
+const metaKey = (id: string) => `${GARDEN_PREFIX}${id}/meta.json`
+const seedPrefix = (id: string) => `${GARDEN_PREFIX}${id}/seeds/`
 
-/** Zero-padded so R2's lexicographic listing matches chunk order. */
-const partKey = (id: string, index: number) => `${partPrefix(id)}${String(index).padStart(10, '0')}`
+/** Zero-padded so R2's lexicographic listing matches seed order. */
+const seedKey = (id: string, index: number) => `${seedPrefix(id)}${String(index).padStart(10, '0')}`
 
 export async function readMeta(bucket: R2Bucket, id: string): Promise<FileMeta | null> {
   const object = await bucket.get(metaKey(id))
@@ -28,55 +28,55 @@ export async function writeMeta(bucket: R2Bucket, meta: FileMeta): Promise<void>
   })
 }
 
-export async function putPart(
+export async function putSeed(
   bucket: R2Bucket,
   id: string,
   index: number,
   bytes: Uint8Array,
 ): Promise<void> {
-  await bucket.put(partKey(id, index), bytes)
+  await bucket.put(seedKey(id, index), bytes)
 }
 
-/** Indexes of the chunks already stored, ascending. */
-export async function listReceived(bucket: R2Bucket, id: string): Promise<number[]> {
-  const prefix = partPrefix(id)
-  const received: number[] = []
+/** Indexes of the seeds already sown, ascending. */
+export async function listSown(bucket: R2Bucket, id: string): Promise<number[]> {
+  const prefix = seedPrefix(id)
+  const sown: number[] = []
   let cursor: string | undefined
 
   do {
     const page = await bucket.list({ prefix, cursor })
     for (const object of page.objects) {
-      received.push(Number(object.key.slice(prefix.length)))
+      sown.push(Number(object.key.slice(prefix.length)))
     }
     cursor = page.truncated ? page.cursor : undefined
   } while (cursor)
 
-  return received.sort((a, b) => a - b)
+  return sown.sort((a, b) => a - b)
 }
 
-export interface UploadPage {
+export interface GardenPage {
   files: FileMeta[]
   /** Pass back as `cursor` to fetch the next page, when present. */
   cursor?: string
 }
 
 /**
- * One page of registered uploads, newest first, completed uploads only.
+ * One page of registered plantings, newest first, finished ones only.
  *
- * A single `list()` with a `/` delimiter groups the bucket's keys by upload id
- * without walking every chunk object, so this costs one list call plus one
+ * A single `list()` with a `/` delimiter groups the bucket's keys by planting
+ * id without walking every seed object, so this costs one list call plus one
  * `get` per id on the page rather than a scan of the whole bucket.
  */
-export async function listUploads(bucket: R2Bucket, options: { cursor?: string; limit?: number } = {}): Promise<UploadPage> {
+export async function listGarden(bucket: R2Bucket, options: { cursor?: string; limit?: number } = {}): Promise<GardenPage> {
   const page = await bucket.list({
-    prefix: UPLOADS_PREFIX,
+    prefix: GARDEN_PREFIX,
     delimiter: '/',
     cursor: options.cursor,
     limit: options.limit ?? 100,
   })
 
   const ids = (page.delimitedPrefixes ?? []).map((prefix) =>
-    prefix.slice(UPLOADS_PREFIX.length, -1),
+    prefix.slice(GARDEN_PREFIX.length, -1),
   )
 
   const metas = await Promise.all(ids.map((id) => readMeta(bucket, id)))
@@ -90,10 +90,10 @@ export async function listUploads(bucket: R2Bucket, options: { cursor?: string; 
   }
 }
 
-/** Delete every object belonging to an upload. */
-export async function deleteUpload(bucket: R2Bucket, id: string): Promise<void> {
-  const received = await listReceived(bucket, id)
-  const keys = received.map((index) => partKey(id, index))
+/** Remove every object belonging to a planting. */
+export async function uprootPlanting(bucket: R2Bucket, id: string): Promise<void> {
+  const sown = await listSown(bucket, id)
+  const keys = sown.map((index) => seedKey(id, index))
   keys.push(metaKey(id))
 
   // R2 caps a bulk delete at 1000 keys per call.
@@ -103,22 +103,22 @@ export async function deleteUpload(bucket: R2Bucket, id: string): Promise<void> 
 }
 
 /**
- * Concatenate the stored chunks back into the original byte stream, keeping a
- * few reads in flight so the download is not one round trip per chunk.
+ * Concatenate the sown seeds back into the original byte stream, keeping a
+ * few reads in flight so a harvest is not one round trip per seed.
  */
-export function streamFile(bucket: R2Bucket, meta: FileMeta): ReadableStream<Uint8Array> {
+export function streamHarvest(bucket: R2Bucket, meta: FileMeta): ReadableStream<Uint8Array> {
   const PREFETCH = 6
   const inFlight: Promise<R2ObjectBody | null>[] = []
   let next = 0
 
   function fill() {
     while (inFlight.length < PREFETCH && next < meta.chunks) {
-      inFlight.push(bucket.get(partKey(meta.id, next)))
+      inFlight.push(bucket.get(seedKey(meta.id, next)))
       next += 1
     }
   }
 
-  const parts = new ReadableStream<Uint8Array>({
+  const seeds = new ReadableStream<Uint8Array>({
     start: fill,
     async pull(controller) {
       const pending = inFlight.shift()
@@ -128,21 +128,21 @@ export function streamFile(bucket: R2Bucket, meta: FileMeta): ReadableStream<Uin
       }
       fill()
 
-      const part = await pending
-      if (!part) {
-        controller.error(new Error(`Upload ${meta.id} is missing a chunk`))
+      const seed = await pending
+      if (!seed) {
+        controller.error(new Error(`Planting ${meta.id} is missing a row`))
         return
       }
-      controller.enqueue(new Uint8Array(await part.arrayBuffer()))
+      controller.enqueue(new Uint8Array(await seed.arrayBuffer()))
     },
   })
 
   // The runtime ignores a hand-set Content-Length and falls back to chunked
   // encoding for an ordinary ReadableStream. Piping through a FixedLengthStream
-  // is what makes the length known, so downloads get a real progress bar.
+  // is what makes the length known, so a harvest gets a real progress bar.
   const { readable, writable } = new FixedLengthStream(meta.size)
-  parts.pipeTo(writable).catch(() => {
-    // The client went away, or a chunk was missing; the readable end already
+  seeds.pipeTo(writable).catch(() => {
+    // The client went away, or a row was missing; the readable end already
     // surfaces the failure as a truncated response.
   })
   return readable

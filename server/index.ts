@@ -1,16 +1,16 @@
 /**
- * Shrill: chunked file transfer where every upload request is a plain GET with
- * the payload in the query string. Chunks are stored in R2 and streamed back
- * in order on download.
+ * Greenhouse: things move through plain GET requests, split into seeds that
+ * are sown one at a time and stored in R2, then streamed back in order on
+ * harvest.
  *
- *   GET    /api/upload/init?name&size&type   -> FileMeta (registers an upload)
- *   GET    /api/upload/chunk?id&index&data   -> { id, index, bytes }
- *   GET    /api/upload/status?id             -> UploadStatus
- *   GET    /api/upload/complete?id           -> FileMeta (finalises)
- *   GET    /api/files                        -> FileListPage (completed uploads, newest first)
- *   GET    /api/files/:id                    -> FileMeta
- *   DELETE /api/files/:id                    -> 204
- *   GET    /api/download/:id                 -> the file
+ *   GET    /api/garden/sow?name&size&type    -> FileMeta (starts a planting)
+ *   GET    /api/garden/seed?id&index&data    -> { id, index, bytes }
+ *   GET    /api/garden/growth?id             -> UploadStatus
+ *   GET    /api/garden/ripen?id              -> FileMeta (finishes a planting)
+ *   GET    /api/garden                       -> FileListPage (finished plantings, newest first)
+ *   GET    /api/garden/:id                   -> FileMeta
+ *   DELETE /api/garden/:id                   -> 204
+ *   GET    /api/harvest/:id                  -> the planting
  */
 
 import { BASE64URL_PATTERN, decodeBase64Url } from '../shared/base64url'
@@ -23,13 +23,13 @@ import {
   type UploadStatus,
 } from '../shared/protocol'
 import {
-  deleteUpload,
   isValidId,
-  listReceived,
-  listUploads,
-  putPart,
+  listGarden,
+  listSown,
+  putSeed,
   readMeta,
-  streamFile,
+  streamHarvest,
+  uprootPlanting,
   writeMeta,
 } from './storage'
 
@@ -47,7 +47,7 @@ const NON_ASCII = new RegExp('[^\\u0020-\\u007e]', 'g')
 
 function sanitizeName(name: string): string {
   const cleaned = name.replace(UNSAFE_NAME_CHARS, '_').trim().slice(0, MAX_NAME_LENGTH)
-  return cleaned || 'download'
+  return cleaned || 'harvest'
 }
 
 /** Keep only well-formed MIME types; anything else is served as a generic blob. */
@@ -60,28 +60,28 @@ function contentDisposition(name: string): string {
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`
 }
 
-/** Resolve the upload named by an id, or the error response explaining why not. */
+/** Resolve the planting named by an id, or the error response explaining why not. */
 async function requireMeta(
   bucket: R2Bucket,
   id: string | null,
 ): Promise<{ meta: FileMeta } | { response: Response }> {
   if (!id || !isValidId(id)) {
-    return { response: fail('A valid upload id is required', 400) }
+    return { response: fail('A valid tag is required', 400) }
   }
   const meta = await readMeta(bucket, id)
   if (!meta) {
-    return { response: fail('Upload not found', 404) }
+    return { response: fail('Nothing grows under that tag', 404) }
   }
   return { meta }
 }
 
-async function handleInit(url: URL, bucket: R2Bucket): Promise<Response> {
+async function handleSow(url: URL, bucket: R2Bucket): Promise<Response> {
   const size = Number(url.searchParams.get('size'))
   if (!Number.isInteger(size) || size < 0) {
     return fail('size must be a non-negative integer', 400)
   }
   if (size > MAX_FILE_SIZE) {
-    return fail(`File is larger than the ${MAX_FILE_SIZE} byte limit`, 413)
+    return fail(`That's larger than the ${MAX_FILE_SIZE} byte limit`, 413)
   }
 
   const meta: FileMeta = {
@@ -99,13 +99,13 @@ async function handleInit(url: URL, bucket: R2Bucket): Promise<Response> {
   return json(meta, 201)
 }
 
-async function handleChunk(url: URL, bucket: R2Bucket): Promise<Response> {
+async function handleSeed(url: URL, bucket: R2Bucket): Promise<Response> {
   const found = await requireMeta(bucket, url.searchParams.get('id'))
   if ('response' in found) return found.response
   const { meta } = found
 
   if (meta.complete) {
-    return fail('Upload has already been completed', 409)
+    return fail('That planting has already finished', 409)
   }
 
   const index = Number(url.searchParams.get('index'))
@@ -128,19 +128,19 @@ async function handleChunk(url: URL, bucket: R2Bucket): Promise<Response> {
     return fail('data is not valid base64url', 400)
   }
   if (bytes.byteLength > MAX_CHUNK_SIZE) {
-    return fail(`A chunk may not exceed ${MAX_CHUNK_SIZE} bytes`, 413)
+    return fail(`A seed may not exceed ${MAX_CHUNK_SIZE} bytes`, 413)
   }
 
-  await putPart(bucket, meta.id, index, bytes)
+  await putSeed(bucket, meta.id, index, bytes)
   return json({ id: meta.id, index, bytes: bytes.byteLength })
 }
 
-async function handleStatus(url: URL, bucket: R2Bucket): Promise<Response> {
+async function handleGrowth(url: URL, bucket: R2Bucket): Promise<Response> {
   const found = await requireMeta(bucket, url.searchParams.get('id'))
   if ('response' in found) return found.response
   const { meta } = found
 
-  const received = await listReceived(bucket, meta.id)
+  const received = await listSown(bucket, meta.id)
   const have = new Set(received)
   const missing: number[] = []
   for (let index = 0; index < meta.chunks; index += 1) {
@@ -157,7 +157,7 @@ async function handleStatus(url: URL, bucket: R2Bucket): Promise<Response> {
   return json(status)
 }
 
-async function handleComplete(url: URL, bucket: R2Bucket): Promise<Response> {
+async function handleRipen(url: URL, bucket: R2Bucket): Promise<Response> {
   const found = await requireMeta(bucket, url.searchParams.get('id'))
   if ('response' in found) return found.response
   const { meta } = found
@@ -166,14 +166,14 @@ async function handleComplete(url: URL, bucket: R2Bucket): Promise<Response> {
     return json(meta)
   }
 
-  const received = await listReceived(bucket, meta.id)
+  const received = await listSown(bucket, meta.id)
   if (received.length !== meta.chunks) {
     const have = new Set(received)
     const missing: number[] = []
     for (let index = 0; index < meta.chunks && missing.length < 100; index += 1) {
       if (!have.has(index)) missing.push(index)
     }
-    return fail(`Upload is missing ${meta.chunks - received.length} chunk(s)`, 409, { missing })
+    return fail(`Still waiting on ${meta.chunks - received.length} row(s)`, 409, { missing })
   }
 
   const completed: FileMeta = { ...meta, complete: true }
@@ -181,34 +181,34 @@ async function handleComplete(url: URL, bucket: R2Bucket): Promise<Response> {
   return json(completed)
 }
 
-async function handleList(url: URL, bucket: R2Bucket): Promise<Response> {
+async function handleGardenList(url: URL, bucket: R2Bucket): Promise<Response> {
   const cursor = url.searchParams.get('cursor') ?? undefined
-  const page = await listUploads(bucket, { cursor })
+  const page = await listGarden(bucket, { cursor })
   return json(page)
 }
 
-async function handleDownload(id: string, bucket: R2Bucket): Promise<Response> {
+async function handleHarvest(id: string, bucket: R2Bucket): Promise<Response> {
   const found = await requireMeta(bucket, id)
   if ('response' in found) return found.response
   const { meta } = found
 
   if (!meta.complete) {
-    return fail('Upload is still in progress', 409)
+    return fail('Still growing', 409)
   }
 
   // Content-Length is not set here: the runtime derives it from the body, which
-  // streamFile makes a fixed-length stream.
+  // streamHarvest makes a fixed-length stream.
   const headers = {
     'Content-Type': meta.type || 'application/octet-stream',
     'Content-Disposition': contentDisposition(meta.name),
-    // Content at a given id never changes, but the id itself is the capability.
+    // Content under a given tag never changes, but the tag itself is the capability.
     'Cache-Control': 'private, max-age=3600',
   }
 
   if (meta.size === 0) {
     return new Response(null, { headers })
   }
-  return new Response(streamFile(bucket, meta), { headers })
+  return new Response(streamHarvest(bucket, meta), { headers })
 }
 
 export default {
@@ -218,42 +218,42 @@ export default {
 
     // wrangler.jsonc routes /api/* to the Worker first via run_worker_first.
     // Anything that is not the API defers to the assets binding, which is what
-    // makes client-side routes such as /files resolve via the SPA fallback.
+    // makes client-side routes such as /garden resolve via the SPA fallback.
     if (!pathname.startsWith('/api/')) {
       return env.ASSETS.fetch(request)
     }
 
-    const bucket = env.UPLOADS
-    const fileId = pathname.match(/^\/api\/(?:files|download)\/([^/]+)$/)?.[1] ?? null
+    const bucket = env.GARDEN
+    const taggedId = pathname.match(/^\/api\/(?:garden|harvest)\/([^/]+)$/)?.[1] ?? null
 
     if (request.method === 'GET') {
       switch (pathname) {
-        case '/api/upload/init':
-          return handleInit(url, bucket)
-        case '/api/upload/chunk':
-          return handleChunk(url, bucket)
-        case '/api/upload/status':
-          return handleStatus(url, bucket)
-        case '/api/upload/complete':
-          return handleComplete(url, bucket)
-        case '/api/files':
-          return handleList(url, bucket)
+        case '/api/garden/sow':
+          return handleSow(url, bucket)
+        case '/api/garden/seed':
+          return handleSeed(url, bucket)
+        case '/api/garden/growth':
+          return handleGrowth(url, bucket)
+        case '/api/garden/ripen':
+          return handleRipen(url, bucket)
+        case '/api/garden':
+          return handleGardenList(url, bucket)
       }
 
-      if (fileId !== null && pathname.startsWith('/api/files/')) {
-        const found = await requireMeta(bucket, fileId)
+      if (taggedId !== null && pathname.startsWith('/api/garden/')) {
+        const found = await requireMeta(bucket, taggedId)
         return 'response' in found ? found.response : json(found.meta)
       }
-      if (fileId !== null && pathname.startsWith('/api/download/')) {
-        return handleDownload(fileId, bucket)
+      if (taggedId !== null && pathname.startsWith('/api/harvest/')) {
+        return handleHarvest(taggedId, bucket)
       }
     }
 
-    if (request.method === 'DELETE' && fileId !== null && pathname.startsWith('/api/files/')) {
-      if (!isValidId(fileId)) {
-        return fail('A valid upload id is required', 400)
+    if (request.method === 'DELETE' && taggedId !== null && pathname.startsWith('/api/garden/')) {
+      if (!isValidId(taggedId)) {
+        return fail('A valid tag is required', 400)
       }
-      await deleteUpload(bucket, fileId)
+      await uprootPlanting(bucket, taggedId)
       return new Response(null, { status: 204 })
     }
 

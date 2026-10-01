@@ -1,7 +1,7 @@
-// shrill — paste this into the browser console on the page you want to
-// upload from. It opens a file picker, uploads the chosen file in chunks via
-// GET requests to this origin's /api endpoints (the same protocol the site's
-// own upload page uses), and logs a share link when it's done.
+// greenhouse — paste this into the browser console on the page you want to
+// plant from. It opens a picker, plants the chosen item seed by seed via GET
+// requests to this origin's /api/garden endpoints (the same protocol the
+// site's own page uses), and logs a tag to harvest it with when it's done.
 (async () => {
   const CONCURRENCY = 6
 
@@ -22,7 +22,7 @@
     return body
   }
 
-  function pickFile() {
+  function pickItem() {
     return new Promise((resolve, reject) => {
       const input = document.createElement('input')
       input.type = 'file'
@@ -32,24 +32,28 @@
       input.addEventListener('change', () => {
         input.remove()
         if (input.files && input.files[0]) resolve(input.files[0])
-        else reject(new Error('No file selected'))
+        else reject(new Error('Nothing was chosen'))
       })
       input.addEventListener('cancel', () => {
         input.remove()
-        reject(new Error('File selection cancelled'))
+        reject(new Error('Selection cancelled'))
       })
       input.click()
     })
   }
 
-  console.log('[shrill] choose a file in the picker that just opened…')
-  const file = await pickFile()
-  console.log(`[shrill] uploading ${file.name} (${file.size} bytes)`)
+  console.log('[greenhouse] choose something in the picker that just opened…')
+  const chosen = await pickItem()
+  console.log(`[greenhouse] planting ${chosen.name} (${chosen.size} bytes)`)
 
-  const query = new URLSearchParams({ name: file.name, size: String(file.size), type: file.type })
-  const meta = await readJson(await fetch(`/api/upload/init?${query}`))
+  const query = new URLSearchParams({
+    name: chosen.name,
+    size: String(chosen.size),
+    type: chosen.type,
+  })
+  const meta = await readJson(await fetch(`/api/garden/sow?${query}`))
 
-  let uploaded = 0
+  let sown = 0
   let next = 0
 
   async function worker() {
@@ -59,25 +63,25 @@
       if (index >= meta.chunks) return
 
       const start = index * meta.chunkSize
-      const slice = file.slice(start, Math.min(start + meta.chunkSize, file.size))
+      const slice = chosen.slice(start, Math.min(start + meta.chunkSize, chosen.size))
       const bytes = new Uint8Array(await slice.arrayBuffer())
       const data = encodeBase64Url(bytes)
 
-      await readJson(await fetch(`/api/upload/chunk?id=${meta.id}&index=${index}&data=${data}`))
-      uploaded += 1
-      console.log(`[shrill] ${uploaded} / ${meta.chunks} chunks`)
+      await readJson(await fetch(`/api/garden/seed?id=${meta.id}&index=${index}&data=${data}`))
+      sown += 1
+      console.log(`[greenhouse] ${sown} / ${meta.chunks} rows`)
     }
   }
 
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, meta.chunks || 1) }, worker))
-  await readJson(await fetch(`/api/upload/complete?id=${meta.id}`))
+  await readJson(await fetch(`/api/garden/ripen?id=${meta.id}`))
 
-  const link = `${location.origin}/api/download/${meta.id}`
-  console.log(`[shrill] done: ${link}`)
+  const tag = `${location.origin}/api/harvest/${meta.id}`
+  console.log(`[greenhouse] planted: ${tag}`)
 
   try {
-    await navigator.clipboard.writeText(link)
-    console.log('[shrill] link copied to the clipboard')
+    await navigator.clipboard.writeText(tag)
+    console.log('[greenhouse] tag copied to the clipboard')
   } catch {
     // Clipboard access can need a user gesture; not fatal if it's unavailable.
   }

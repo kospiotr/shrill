@@ -1,23 +1,23 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import CliView from '../views/CliView.vue'
+import AlmanacView from '../views/AlmanacView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/',
-      name: 'cli',
-      component: CliView,
+      name: 'almanac',
+      component: AlmanacView,
     },
     {
-      path: '/upload',
-      name: 'upload',
-      component: () => import('../views/UploadView.vue'),
+      path: '/plant',
+      name: 'plant',
+      component: () => import('../views/PlantView.vue'),
     },
     {
-      path: '/files',
-      name: 'files',
-      component: () => import('../views/FilesView.vue'),
+      path: '/garden',
+      name: 'garden',
+      component: () => import('../views/GardenView.vue'),
     },
     {
       path: '/:pathMatch(.*)*',
