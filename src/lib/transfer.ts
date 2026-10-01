@@ -41,10 +41,6 @@ async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
   return readJson<T>(await fetch(path, { signal }))
 }
 
-export function fetchMeta(id: string, signal?: AbortSignal): Promise<FileMeta> {
-  return apiGet<FileMeta>(`/api/files/${encodeURIComponent(id)}`, signal)
-}
-
 export function fetchStatus(id: string, signal?: AbortSignal): Promise<UploadStatus> {
   return apiGet<UploadStatus>(`/api/upload/status?id=${encodeURIComponent(id)}`, signal)
 }
@@ -58,8 +54,9 @@ export function downloadUrl(id: string): string {
   return `/api/download/${encodeURIComponent(id)}`
 }
 
+/** A link that downloads the file directly — there is no standalone download page. */
 export function shareUrl(id: string): string {
-  return new URL(`/d/${id}`, window.location.origin).toString()
+  return new URL(downloadUrl(id), window.location.origin).toString()
 }
 
 export async function discardUpload(id: string): Promise<void> {

@@ -216,9 +216,9 @@ export default {
     const url = new URL(request.url)
     const { pathname } = url
 
-    // Anything that is not the API belongs to the SPA. Deferring to the assets
-    // binding is what makes client-side routes such as /d/<id> resolve, since a
-    // configured Worker takes precedence over `not_found_handling`.
+    // wrangler.jsonc routes /api/* to the Worker first via run_worker_first.
+    // Anything that is not the API defers to the assets binding, which is what
+    // makes client-side routes such as /files resolve via the SPA fallback.
     if (!pathname.startsWith('/api/')) {
       return env.ASSETS.fetch(request)
     }

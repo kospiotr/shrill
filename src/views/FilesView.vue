@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import type { FileMeta } from '@shared/protocol'
-import { downloadUrl, fetchFiles, formatBytes, shareUrl } from '@/lib/transfer'
+import { discardUpload, downloadUrl, fetchFiles, formatBytes, shareUrl } from '@/lib/transfer'
 
 const files = ref<FileMeta[]>([])
 const cursor = ref<string | undefined>(undefined)
@@ -9,6 +9,11 @@ const loading = ref(false)
 const loadingMore = ref(false)
 const error = ref<string | null>(null)
 const copiedId = ref<string | null>(null)
+
+/** Id of the row awaiting a second click before it actually deletes. */
+const confirmingId = ref<string | null>(null)
+const deletingId = ref<string | null>(null)
+let confirmTimer: ReturnType<typeof setTimeout> | undefined
 
 async function load() {
   loading.value = true
@@ -52,7 +57,38 @@ async function copyLink(id: string) {
   }
 }
 
+/** First click arms the row; a second click within the window deletes it. */
+function requestDelete(id: string) {
+  if (confirmingId.value === id) {
+    void performDelete(id)
+    return
+  }
+
+  confirmingId.value = id
+  clearTimeout(confirmTimer)
+  confirmTimer = setTimeout(() => {
+    if (confirmingId.value === id) confirmingId.value = null
+  }, 4000)
+}
+
+async function performDelete(id: string) {
+  clearTimeout(confirmTimer)
+  confirmingId.value = null
+  deletingId.value = id
+  error.value = null
+
+  try {
+    await discardUpload(id)
+    files.value = files.value.filter((file) => file.id !== id)
+  } catch (cause) {
+    error.value = (cause as Error).message
+  } finally {
+    deletingId.value = null
+  }
+}
+
 onMounted(load)
+onUnmounted(() => clearTimeout(confirmTimer))
 </script>
 
 <template>
@@ -81,6 +117,20 @@ onMounted(load)
           <a class="button primary" :href="downloadUrl(file.id)" :download="file.name">
             Download
           </a>
+          <button
+            type="button"
+            class="danger"
+            :disabled="deletingId === file.id"
+            @click="requestDelete(file.id)"
+          >
+            {{
+              deletingId === file.id
+                ? 'Deleting…'
+                : confirmingId === file.id
+                  ? 'Confirm delete'
+                  : 'Delete'
+            }}
+          </button>
         </div>
       </li>
     </ul>

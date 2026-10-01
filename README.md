@@ -48,10 +48,37 @@ Clients should use the `chunkSize` returned by `init` rather than assuming one.
 
 ## Pages
 
-- `/` — pick or drop a file, watch per-chunk progress, get a share link.
-- `/d/:id` — look up a file by id or share link and download it.
-- `/files` — every completed upload, newest first, with a copy-link and
-  download action for each.
+- `/` — the CLI page: curl examples, a copy-paste bash script
+  (`src/assets/shrill-cli.sh`), and a browser-console upload script
+  (`src/assets/browser-upload.js`), all with one-click copy.
+- `/upload` — pick or drop a file, watch per-chunk progress, get a share link.
+- `/files` — every completed upload, newest first, with copy-link, download,
+  and delete actions for each. There is no separate download-by-id page;
+  browsing this list replaced it, and a "share link" is just a direct
+  `/api/download/:id` URL.
+
+### CLI script
+
+The `/` page renders a ready-to-run bash script (requires `bash`, `curl`,
+`jq`) with the deployment's own origin baked in as its default target:
+
+```sh
+./shrill.sh upload <path>              # chunk and upload a file, print its share link
+./shrill.sh download <id> [output]     # download a file by id
+./shrill.sh status <id>                # which chunks the server has
+./shrill.sh to-js [output.js]          # write the browser-console upload script below
+```
+
+`SHRILL_URL=https://other-host ./shrill.sh …` points any command at a
+different deployment. `shrill.sh to-js` writes
+`src/assets/browser-upload.js` verbatim — paste it into a browser's
+devtools console on the page you want to upload from and it opens a file
+picker, uploads in chunks, and logs a share link.
+
+Both scripts are plain files under `src/assets/`, not generated from a
+template literal, so they stay lintable and shellcheck-able on their own.
+`src/lib/cliScript.ts` imports them with Vite's `?raw` suffix and splices the
+deployment's origin into the bash copy shown on the page.
 
 ## Setup
 
@@ -80,7 +107,8 @@ Both are in `shared/protocol.ts`, which the Worker and the browser share:
 - `MAX_FILE_SIZE` — 512 MB
 - `CHUNK_SIZE` — 6 KiB raw per request
 
-Note that the endpoints are unauthenticated: anyone with the URL can upload, and
-`/files` lists every completed upload for anyone who opens it — so there is no
-real privacy to an id once a file is up. Treat this as a public bucket, not a
-private share.
+Note that the endpoints are unauthenticated: anyone with the URL can upload,
+`/files` lists every completed upload for anyone who opens it, and the delete
+button there lets anyone remove anyone else's file. There is no real privacy
+or ownership to an id once a file is up. Treat this as a public, mutable
+bucket, not a private share.

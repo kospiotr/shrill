@@ -6,8 +6,8 @@ import { RouterLink } from 'vue-router'
   <nav class="menu">
     <RouterLink to="/" class="brand">shrill</RouterLink>
     <div class="links">
-      <RouterLink to="/">Upload</RouterLink>
-      <RouterLink to="/d">Download</RouterLink>
+      <RouterLink to="/">CLI</RouterLink>
+      <RouterLink to="/upload">Upload</RouterLink>
       <RouterLink to="/files">Files</RouterLink>
     </div>
   </nav>

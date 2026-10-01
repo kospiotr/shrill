@@ -76,6 +76,18 @@ button.primary:hover:not(:disabled),
   background: var(--color-accent-hover);
 }
 
+button.danger {
+  color: var(--color-danger);
+  background: transparent;
+  border-color: var(--color-border);
+}
+
+button.danger:hover:not(:disabled) {
+  color: var(--color-accent-text);
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
 .muted {
   color: var(--color-text-muted);
   font-size: 0.9rem;

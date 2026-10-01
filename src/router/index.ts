@@ -1,20 +1,18 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import UploadView from '../views/UploadView.vue'
+import CliView from '../views/CliView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/',
-      name: 'upload',
-      component: UploadView,
+      name: 'cli',
+      component: CliView,
     },
     {
-      // The share link for an upload. The id is optional so the page can also
-      // be opened bare and have one pasted in.
-      path: '/d/:id?',
-      name: 'download',
-      component: () => import('../views/DownloadView.vue'),
+      path: '/upload',
+      name: 'upload',
+      component: () => import('../views/UploadView.vue'),
     },
     {
       path: '/files',

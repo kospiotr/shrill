@@ -8,11 +8,15 @@
 	"compatibility_date": "2025-04-10",
 	"main": "server/index.ts",
 	"assets": {
-		// The Worker defers to this binding for every non-/api/ request, which is
-		// what makes SPA deep links resolve: a configured Worker takes precedence
-		// over `not_found_handling` on its own.
 		"binding": "ASSETS",
-		"not_found_handling": "single-page-application"
+		"not_found_handling": "single-page-application",
+		// Without this, Cloudflare resolves static assets BEFORE the Worker runs
+		// at all (run_worker_first defaults to false) — so a path like
+		// /api/download/<id>, which matches no literal file, would get the SPA's
+		// not_found_handling fallback (index.html) instead of ever reaching our
+		// fetch handler. Scoped to /api/* so static assets still skip the Worker
+		// entirely, as Cloudflare recommends.
+		"run_worker_first": ["/api/*"]
 	},
 	"r2_buckets": [
 		{
